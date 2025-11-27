@@ -49,7 +49,7 @@ class SchedulingController extends Controller
                     $query->whereDate('date', '<=', $request->end_date);
                 }
             }
-           
+
 
             // Ejecuta la consulta y obtiene los resultados
             $schedulings = $query->get();
@@ -113,7 +113,7 @@ class SchedulingController extends Controller
     public function create()
     {
         $shifts = Shift::all();
-        
+
         return view('admin.schedulings.create', compact('shifts'));
     }
 
@@ -122,25 +122,23 @@ class SchedulingController extends Controller
         $ListaNoRegistros = [];
         $start_date = $request->start_date;
 
-
         if ($request->end_date) {
             $end_date = $request->end_date;
-        }else {
-            $end_date = $request->start_date; // Si no hay end_date, usamos start_date
+        } else {
+            $end_date = $request->start_date;
         }
-       
-        foreach ($request->groups as $group) {
-          
-            $vacation = $this->checkVacation($group['driver_id'], $start_date, $end_date);
 
-            if($vacation){
+        foreach ($request->groups as $group) {
+            // Validar conductor
+            $vacation = $this->checkVacation($group['driver_id'], $start_date, $end_date);
+            if ($vacation) {
                 if (!in_array($group['employee_group_id'], $ListaNoRegistros)) {
                     array_push($ListaNoRegistros, $group['employee_group_id']);
                 }
             }
 
+            // Validar ayudantes
             $helpers = $group['helpers'] ?? [];
-            
             foreach ($helpers as $helper) {
                 $vacation = $this->checkVacation($helper, $start_date, $end_date);
                 if ($vacation) {
@@ -149,7 +147,6 @@ class SchedulingController extends Controller
                     }
                 }
             }
-            
         }
 
         return $ListaNoRegistros;
@@ -167,149 +164,260 @@ class SchedulingController extends Controller
 
 
     public function store(Request $request)
-    {
-        // Verificamos si start_date y end_date están presentes
-        try {
-            if ($request->start_date) {
-                DB::beginTransaction();
-                // Si no se pasa end_date, significa que es solo un día
-                if ($request->end_date) {
-                    // Si hay un rango de fechas
-                   
-                    $ListaNoRegistros = $this->ValidationContenido($request);
-                    
-                    // Recorremos todos los grupos
-                    foreach ($request->groups as $group) {
-                        if (in_array($group['employee_group_id'], $ListaNoRegistros)) {
-                            // Si el grupo está en la lista de no registros, lo saltamos
-                            continue;
-                        }
-                        // Obtenemos los días del grupo desde la base de datos
-                        $employeeGroup = EmployeeGroup::find($group['employee_group_id']);
-                        $groupDays = $employeeGroup ? explode(',', $employeeGroup->days) : [];
-                        
-        
-                        // Convertimos los días de la semana en números (1 = Lunes, 2 = Martes, etc.)
-                        $daysOfWeek = [
-                            'Lunes' => Carbon::MONDAY,
-                            'Martes' => Carbon::TUESDAY,
-                            'Miércoles' => Carbon::WEDNESDAY,
-                            'Jueves' => Carbon::THURSDAY,
-                            'Viernes' => Carbon::FRIDAY,
-                            'Sábado' => Carbon::SATURDAY,
-                            'Domingo' => Carbon::SUNDAY,
-                        ];
+{
+    try {
+        if (!$request->start_date) {
+            return response()->json([
+                'message' => 'La fecha de inicio es requerida'
+            ], 400);
+        }
 
-                        $startDate = Carbon::parse($request->start_date);  // Convertimos la fecha de inicio
-                        $endDate = Carbon::parse($request->end_date);      // Convertimos la fecha de fin
-                        
-                        $helpers = $group['helpers'] ?? [];
-                        // Iteramos por cada día dentro del rango
-                        while ($startDate->lte($endDate)) {
-                            // Comprobamos si el día de la semana de startDate está en los días asignados al grupo
-                            if (in_array($startDate->dayOfWeek, array_map(function($day) use ($daysOfWeek) {
-                                return $daysOfWeek[$day];
-                            }, $groupDays))) {
-                                
-                                $isDuplicate = $this->validationDuplicate($startDate->toDateString(),$employeeGroup->zone_id,$employeeGroup->shift_id );
-                        
-                                if($isDuplicate){
-                                    $startDate->addDay();
-                                    continue;
-                                }
+        $end_date = $request->end_date ?? $request->start_date;
+        $todosLosErrores = []; // Array para acumular TODOS los errores de validación
 
-                                // Creamos la programación solo si el día actual está en los días asignados
-                                $scheduling = Scheduling::create([
-                                    'date' => $startDate->toDateString(),  // Guardamos solo la fecha (sin la hora)
-                                    'group_id' => $group['employee_group_id'],
-                                    'shift_id' => $employeeGroup->shift_id,
-                                    'vehicle_id' => $employeeGroup->vehicle_id,
-                                    'zone_id' => $employeeGroup->zone_id,
-                                    'notes' => '',
-                                    'status' => 1,
-                                ]);
+        // FASE 1: VALIDAR TODO ANTES DE GUARDAR NADA
+        foreach ($request->groups as $group) {
+            $employeeGroup = EmployeeGroup::find($group['employee_group_id']);
 
-                                Groupdetail::create([
-                                    'employee_id' => $group['driver_id'],
-                                    'scheduling_id' => $scheduling->id,
-                                ]);
+            if (!$employeeGroup) {
+                $todosLosErrores[] = "El grupo {$group['employee_group_id']} no existe";
+                continue;
+            }
 
-                                foreach ($helpers as $helper) {
-                                    Groupdetail::create([
-                                        'employee_id' => $helper,
-                                        'scheduling_id' => $scheduling->id,
-                                    ]);
-                                }
-                            }
-        
-                            // Avanzamos al siguiente día
-                            $startDate->addDay();
-                        }
-                        
-                    }
+            $groupDays = explode(',', $employeeGroup->days);
+            $daysOfWeek = [
+                'Lunes' => Carbon::MONDAY,
+                'Martes' => Carbon::TUESDAY,
+                'Miércoles' => Carbon::WEDNESDAY,
+                'Jueves' => Carbon::THURSDAY,
+                'Viernes' => Carbon::FRIDAY,
+                'Sábado' => Carbon::SATURDAY,
+                'Domingo' => Carbon::SUNDAY,
+            ];
 
-                } else {
-                    // Si solo se pasa start_date (un solo día)
-                    $ListaNoRegistros = $this->ValidationContenido($request);
+            $startDate = Carbon::parse($request->start_date);
+            $endDate = Carbon::parse($end_date);
+            $helpers = $group['helpers'] ?? [];
 
-                    foreach ($request->groups as $group) {
+            // Validar cada día que se va a programar
+            while ($startDate->lte($endDate)) {
+                if (in_array($startDate->dayOfWeek, array_map(function($day) use ($daysOfWeek) {
+                    return $daysOfWeek[$day];
+                }, $groupDays))) {
 
-                        if (in_array($group['employee_group_id'], $ListaNoRegistros)) {
-                            continue;
-                        }
+                    $dateStr = $startDate->toDateString();
 
-                        $helpers = $group['helpers'] ?? [];
+                    // Ejecutar TODAS las validaciones (incluyendo vacaciones)
+                    $validations = $this->runAllValidationsWithVacations(
+                        $group['driver_id'],
+                        $helpers,
+                        $employeeGroup->vehicle_id,
+                        $employeeGroup->shift_id,
+                        $employeeGroup->zone_id,
+                        $dateStr,
+                        $employeeGroup->name,
+                        $end_date
+                    );
 
-                        $employeeGroup = EmployeeGroup::find($group['employee_group_id']);
-                        $startDate = Carbon::parse($request->start_date);
-
-                        $isDuplicate = $this->validationDuplicate($startDate->toDateString(),$employeeGroup->zone_id,$employeeGroup->shift_id );
-                
-                        if($isDuplicate){
-                            continue;
-                        }
-
-                        $scheduling = Scheduling::create([
-                            'date' => $startDate->toDateString(),  // Solo creamos para el día dado
-                            'group_id' => $group['employee_group_id'],
-                            'shift_id' => $employeeGroup->shift_id,
-                            'vehicle_id' => $employeeGroup->vehicle_id,
-                            'zone_id' => $employeeGroup->zone_id,
-                            'notes' => '',
-                            'status' => 1,
-                        ]);
-                        Groupdetail::create([
-                            'employee_id' => $group['driver_id'],
-                            'scheduling_id' => $scheduling->id,
-                        ]);
-
-                        foreach ($helpers as $helper) {
-                            Groupdetail::create([
-                                'employee_id' => $helper,
-                                'scheduling_id' => $scheduling->id,
-                            ]);
-                        }
+                    if (!$validations['valid']) {
+                        $todosLosErrores = array_merge($todosLosErrores, $validations['errors']);
                     }
                 }
-                DB::commit();
-                return response()->json([
-                    'success' => 'Programación creada correctamente.',
-                    'noregistros' => $ListaNoRegistros
-                ], 200);
-            } else {
-                // Si no se pasa ni start_date ni end_date, puedes manejar un error o retornar alguna respuesta.
-                return response()->json([
-                    'message' => 'Las fechas de inicio y fin son necesarias.'
-                ], 400);
+
+                $startDate->addDay();
             }
-        } catch (\Throwable $th) {
-            DB::rollBack();
+
+            // Resetear fecha para el siguiente grupo
+            $startDate = Carbon::parse($request->start_date);
+        }
+
+        // FASE 2: SI HAY ERRORES, AGRUPAR Y MOSTRAR RESUMEN
+        if (!empty($todosLosErrores)) {
+            // Agrupar errores por tipo y empleado
+            $erroresAgrupados = $this->agruparErrores($todosLosErrores);
+
             return response()->json([
-                'message' => 'Error al crear la programación.' . $th->getMessage()
-            ], 500);
+                'message' => 'No se puede crear la programación debido a los siguientes errores:',
+                'errors' => $erroresAgrupados
+            ], 400);
+        }
+
+        // FASE 3: SI TODO ESTÁ VÁLIDO, PROCEDER A GUARDAR
+        DB::beginTransaction();
+
+        foreach ($request->groups as $group) {
+            $employeeGroup = EmployeeGroup::find($group['employee_group_id']);
+            $groupDays = explode(',', $employeeGroup->days);
+
+            $daysOfWeek = [
+                'Lunes' => Carbon::MONDAY,
+                'Martes' => Carbon::TUESDAY,
+                'Miércoles' => Carbon::WEDNESDAY,
+                'Jueves' => Carbon::THURSDAY,
+                'Viernes' => Carbon::FRIDAY,
+                'Sábado' => Carbon::SATURDAY,
+                'Domingo' => Carbon::SUNDAY,
+            ];
+
+            $startDate = Carbon::parse($request->start_date);
+            $endDate = Carbon::parse($end_date);
+            $helpers = $group['helpers'] ?? [];
+
+            while ($startDate->lte($endDate)) {
+                if (in_array($startDate->dayOfWeek, array_map(function($day) use ($daysOfWeek) {
+                    return $daysOfWeek[$day];
+                }, $groupDays))) {
+
+                    $dateStr = $startDate->toDateString();
+
+                    // Crear scheduling (ya validado)
+                    $scheduling = Scheduling::create([
+                        'date' => $dateStr,
+                        'group_id' => $group['employee_group_id'],
+                        'shift_id' => $employeeGroup->shift_id,
+                        'vehicle_id' => $employeeGroup->vehicle_id,
+                        'zone_id' => $employeeGroup->zone_id,
+                        'notes' => '',
+                        'status' => 1,
+                    ]);
+
+                    // Crear conductor
+                    Groupdetail::create([
+                        'employee_id' => $group['driver_id'],
+                        'scheduling_id' => $scheduling->id,
+                    ]);
+
+                    // Crear ayudantes
+                    foreach ($helpers as $helper) {
+                        Groupdetail::create([
+                            'employee_id' => $helper,
+                            'scheduling_id' => $scheduling->id,
+                        ]);
+                    }
+                }
+
+                $startDate->addDay();
+            }
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'success' => 'Todas las programaciones se crearon correctamente.'
+        ], 200);
+
+    } catch (\Throwable $th) {
+        DB::rollBack();
+        return response()->json([
+            'message' => 'Error al crear la programación: ' . $th->getMessage()
+        ], 500);
+    }
+}
+
+
+
+
+
+/**
+ * Agrupar errores similares para mostrar un resumen conciso
+ */
+private function agruparErrores($errores)
+{
+    $agrupados = [];
+    $vacaciones = [];
+    $contratos = [];
+    $disponibilidad = [];
+    $vehiculos = [];
+    $duplicados = [];
+
+    foreach ($errores as $error) {
+        // Vacaciones
+        if (strpos($error, 'tiene vacaciones') !== false) {
+            preg_match('/\] (El (?:conductor|ayudante) .+?) tiene vacaciones del (.+?) al (.+)/', $error, $matches);
+            if ($matches) {
+                $key = $matches[1]; // "El conductor Nombre Apellido"
+                if (!isset($vacaciones[$key])) {
+                    $vacaciones[$key] = [
+                        'mensaje' => $matches[1],
+                        'fecha_inicio' => $matches[2],
+                        'fecha_fin' => $matches[3]
+                    ];
+                }
+            }
+        }
+        // Contratos inactivos
+        elseif (strpos($error, 'no tiene contrato activo') !== false) {
+            preg_match('/\] (El empleado .+?) no tiene contrato/', $error, $matches);
+            if ($matches) {
+                $key = $matches[1];
+                if (!isset($contratos[$key])) {
+                    $contratos[$key] = $matches[1] . ' no tiene contrato activo para las fechas seleccionadas';
+                }
+            }
+        }
+        // Ya está programado
+        elseif (strpos($error, 'ya está programado') !== false) {
+            preg_match('/\] (El empleado .+?) ya está programado/', $error, $matches);
+            if ($matches) {
+                $key = $matches[1];
+                if (!isset($disponibilidad[$key])) {
+                    $disponibilidad[$key] = $matches[1] . ' ya está programado en otro grupo para las fechas seleccionadas';
+                }
+            }
+        }
+        // Vehículo
+        elseif (strpos($error, 'vehículo') !== false && strpos($error, 'mantenimiento') !== false) {
+            preg_match('/\] (El vehículo .+?) tiene mantenimiento/', $error, $matches);
+            if ($matches) {
+                $key = $matches[1];
+                if (!isset($vehiculos[$key])) {
+                    $vehiculos[$key] = $matches[1] . ' tiene mantenimiento programado en las fechas seleccionadas';
+                }
+            }
+        }
+        elseif (strpos($error, 'vehículo') !== false && strpos($error, 'ya está programado') !== false) {
+            preg_match('/\] (El vehículo .+?) ya está programado/', $error, $matches);
+            if ($matches) {
+                $key = $matches[1];
+                if (!isset($vehiculos[$key])) {
+                    $vehiculos[$key] = $matches[1] . ' ya está programado para el turno seleccionado en las fechas indicadas';
+                }
+            }
+        }
+        // Duplicados
+        elseif (strpos($error, 'programación idéntica') !== false) {
+            if (!in_array('Ya existe una programación idéntica para estas fechas, turno, vehículo y personal', $duplicados)) {
+                $duplicados[] = 'Ya existe una programación idéntica para estas fechas, turno, vehículo y personal';
+            }
         }
     }
-    
+
+    // Construir array final de errores agrupados
+    foreach ($vacaciones as $v) {
+        $agrupados[] = "{$v['mensaje']} tiene vacaciones del {$v['fecha_inicio']} al {$v['fecha_fin']}";
+    }
+
+    foreach ($contratos as $c) {
+        $agrupados[] = $c;
+    }
+
+    foreach ($disponibilidad as $d) {
+        $agrupados[] = $d;
+    }
+
+    foreach ($vehiculos as $vh) {
+        $agrupados[] = $vh;
+    }
+
+    foreach ($duplicados as $dup) {
+        $agrupados[] = $dup;
+    }
+
+    return $agrupados;
+}
+
+
+
     /**
      * Display the specified resource.
      */
@@ -327,7 +435,7 @@ class SchedulingController extends Controller
         ])->findOrFail($id);
 
         $changes = DB::select("
-            SELECT 
+            SELECT
         c.id,
         c.scheduling_id,
         c.change_date,
@@ -352,8 +460,8 @@ class SchedulingController extends Controller
         ORDER BY c.change_date DESC
             ", [$id]);
 
-        
-    
+
+
         // Pasar los datos a la vista
         return view('admin.schedulings.show', compact('scheduling', 'changes'));
     }
@@ -375,7 +483,7 @@ class SchedulingController extends Controller
                 $query->where('is_active', 1);
             })
             ->get();
-        
+
         return view('admin.schedulings.edit', compact('scheduling', 'reasons', 'shifts', 'vehicles', 'personal', 'employeeGroup', 'personalDisponible'));
     }
 
@@ -415,7 +523,7 @@ class SchedulingController extends Controller
         $reasons = Reason::all();
         $shifts = Shift::all();
         $vehicles = Vehicle::all();
-        
+
         $personal = Groupdetail::where('scheduling_id', $id)
         ->with('employee','employee.employeeType')
         ->get();
@@ -435,7 +543,7 @@ class SchedulingController extends Controller
             return !$asistieronIds->contains($item->employee_id);
         });
 
-  
+
         $fecha = $scheduling->date;
         $turnoId = optional($scheduling->employeegroup)->shift_id;
 
@@ -457,7 +565,7 @@ class SchedulingController extends Controller
         $personalDisponible = Employee::whereIn('id', $empleadosConAsistencia)
             ->whereNotIn('id', $empleadosAsignados)
             ->get();
-        
+
         return view('admin.schedulings.editModule', compact('scheduling', 'reasons', 'shifts', 'vehicles', 'personalNoAsistido', 'employeeGroup', 'personalDisponible'));
     }
 
@@ -466,11 +574,11 @@ class SchedulingController extends Controller
         $employeeGroups = EmployeeGroup::with(['conductors', 'helpers'])
             ->where('shift_id', $shiftId)
             ->get();
-    
+
         $vehicles = Vehicle::all();
         $zones = Zone::all();
         $shift = Shift::findOrFail($shiftId);
-    
+
         $conductorType = EmployeeType::whereRaw('LOWER(name) = ?', ['conductor'])->first();
         $helperType = EmployeeType::whereRaw('LOWER(name) = ?', ['ayudante'])->first();
         $employeesConductor = $conductorType
@@ -486,7 +594,7 @@ class SchedulingController extends Controller
                     $query->where('is_active', 1);
                 })->get()
             : collect();
-    
+
         return view('admin.schedulings.templantes.form', compact(
             'shiftId',
             'employeeGroups',
@@ -555,12 +663,12 @@ class SchedulingController extends Controller
                         $groupDetail = Groupdetail::where('scheduling_id', $id_scheduling)
                             ->where('employee_id', $change['id_anterior'])
                             ->first();
-                        
+
                         if ($groupDetail) {
                             $groupDetail->update([
                                 'employee_id' => $change['id_nuevo']
                             ]);
-                        } 
+                        }
 
                         break;
                 }
@@ -591,7 +699,7 @@ class SchedulingController extends Controller
         $shiftId = $request->turn;  // El turno seleccionado
         $date = $request->date;  // La fecha seleccionada
         $date = Carbon::parse($date)->format('Y-m-d');  // Convertir la fecha al formato adecuado
-        
+
         // Obtener todos los schedulings con su relación con 'groupdetail'
         $schedulings = Scheduling::with('groupdetail')  // Cargar groupdetails relacionados
             ->where('shift_id', $shiftId)
@@ -649,7 +757,7 @@ class SchedulingController extends Controller
             }
 
 
-            
+
             // 4. Contar los faltantes: Miembros que no tienen una entrada en Attendance para ese día
             foreach ($scheduling->groupdetail as $groupDetail) {
                 $attendance = Attendance::where('employee_id', $groupDetail->employee_id)
@@ -665,12 +773,12 @@ class SchedulingController extends Controller
             $groupEmployee = EmployeeGroup::where('id', $scheduling->group_id)
                 ->select('zone_id')
                 ->first();
-            
+
             if ($groupEmployee) {
                 $zone = Zone::where('id', $groupEmployee->zone_id)
                     ->select('id', 'name')
                     ->first();
-                
+
                 // Si la zona no está repetida, la agregamos al array
                 if ($zone && !in_array($zone, $zonas)) {
                     // Verificar si el grupo está completo con asistencia para marcar la zona como 'completa' o 'incompleta'
@@ -685,7 +793,7 @@ class SchedulingController extends Controller
                 }
             }
         }
-        
+
         // Retornar los resultados
         return response()->json([
             'countAttendance' => $countAttendance,
@@ -733,131 +841,244 @@ class SchedulingController extends Controller
 
     public function storeOne(Request $request)
     {
-            // Verificamos si start_date y end_date están presentes
-            try {
-                if ($request->start_date) {
-                    $helpers = $request->helpers ?? [];
-                    
-                    DB::beginTransaction();
-                    // Si no se pasa end_date, significa que es solo un día
-                    if ($request->end_date) {
-                        // Si hay un rango de fechas
+        try {
+            if (!$request->start_date) {
+                return response()->json([
+                    'message' => 'La fecha de inicio es requerida'
+                ], 400);
+            }
 
-                            // Obtenemos los días del grupo desde la base de datos
-                            $employeeGroup = EmployeeGroup::find($request->employee_group_id);
-                            $groupDays = $request->days; // Aquí usamos los días seleccionados desde el formulario
-            
-                            // Convertimos los días de la semana en números (1 = Lunes, 2 = Martes, etc.)
-                            $daysOfWeek = [
-                                'Lunes' => Carbon::MONDAY,
-                                'Martes' => Carbon::TUESDAY,
-                                'Miércoles' => Carbon::WEDNESDAY,
-                                'Jueves' => Carbon::THURSDAY,
-                                'Viernes' => Carbon::FRIDAY,
-                                'Sábado' => Carbon::SATURDAY,
-                                'Domingo' => Carbon::SUNDAY,
-                            ];
+            DB::beginTransaction();
 
-                            $startDate = Carbon::parse($request->start_date);  // Convertimos la fecha de inicio
-                            $endDate = Carbon::parse($request->end_date);      // Convertimos la fecha de fin
-                            
-                           
-                            // Iteramos por cada día dentro del rango
-                            while ($startDate->lte($endDate)) {
-                                // Comprobamos si el día de la semana de startDate está en los días asignados al grupo
-                                if (in_array($startDate->dayOfWeek, array_map(function($day) use ($daysOfWeek) {
-                                    return $daysOfWeek[$day];
-                                }, $groupDays))) {
+            $helpers = $request->helpers ?? [];
+            $employeeGroup = EmployeeGroup::find($request->employee_group_id);
+            $end_date = $request->end_date ?? $request->start_date;
 
-                                    $isDuplicate = $this->validationDuplicate($startDate->toDateString(),$employeeGroup->zone_id,$employeeGroup->shift_id );
-                        
-                                    if($isDuplicate){
-                                        $startDate->addDay();
-                                        continue;
-                                    }
+            if (!$employeeGroup) {
+                return response()->json([
+                    'message' => 'El grupo de empleados no existe'
+                ], 400);
+            }
 
-                                    // Creamos la programación solo si el día actual está en los días asignados
-                                    $scheduling = Scheduling::create([
-                                        'date' => $startDate->toDateString(),  // Guardamos solo la fecha (sin la hora)
-                                        'group_id' => $employeeGroup->id,
-                                        'shift_id' => $employeeGroup->shift_id,
-                                        'vehicle_id' => $employeeGroup->vehicle_id,
-                                        'zone_id' => $employeeGroup->zone_id,
-                                        'notes' => '',
-                                        'status' => 1,
-                                    ]);
-
-                                    Groupdetail::create([
-                                        'employee_id' => $request->driver_id,
-                                        'scheduling_id' => $scheduling->id,
-                                    ]);
-
-                                    foreach ($helpers as $helper) {
-                                        Groupdetail::create([
-                                            'employee_id' => $helper,
-                                            'scheduling_id' => $scheduling->id,
-                                        ]);
-                                    }
-                                }
-            
-                                // Avanzamos al siguiente día
-                                $startDate->addDay();
-                            }
-                            
-                        
-
-                    } else {
-                       
-                            $employeeGroup = EmployeeGroup::find($request->employee_group_id);
-                            $startDate = Carbon::parse($request->start_date);
-
-                            $isDuplicate = $this->validationDuplicate($startDate->toDateString(),$employeeGroup->zone_id,$employeeGroup->shift_id );
-                        
-                            if($isDuplicate){
-                                return response()->json([
-                                    'message' => 'Ya existe una programación para esa fecha con ese grupo y zona.'
-                                ], 400);
-                            }
-                            
-                            $scheduling = Scheduling::create([
-                                'date' => $startDate->toDateString(),  // Solo creamos para el día dado
-                                'group_id' =>$employeeGroup->id,
-                                'shift_id' => $employeeGroup->shift_id,
-                                'vehicle_id' => $employeeGroup->vehicle_id,
-                                'zone_id' => $employeeGroup->zone_id,
-                                'notes' => '',
-                                'status' => 1,
-                            ]);
-                            Groupdetail::create([
-                                'employee_id' => $request->driver_id,
-                                'scheduling_id' => $scheduling->id,
-                            ]);
-
-                            foreach ($helpers as $helper) {
-                                Groupdetail::create([
-                                    'employee_id' => $helper,
-                                    'scheduling_id' => $scheduling->id,
-                                ]);
-                            }
-                        
-                    }
-                    DB::commit();
-                    return response()->json([
-                        'success' => 'Programación creada correctamente.'
-                    ], 200);
-                } else {
-                    // Si no se pasa ni start_date ni end_date, puedes manejar un error o retornar alguna respuesta.
-                    return response()->json([
-                        'message' => 'Las fechas de inicio y fin son necesarias.'
-                    ], 400);
-                }
-            } catch (\Throwable $th) {
+            // VALIDACIÓN DE VACACIONES - AGREGAR AQUÍ
+            $driverVacation = $this->checkVacation($request->driver_id, $request->start_date, $end_date);
+            if ($driverVacation) {
+                $employee = Employee::find($request->driver_id);
                 DB::rollBack();
                 return response()->json([
-                    'message' => 'Error al crear la programación.' . $th->getMessage()
-                ], 500);
+                    'message' => "El conductor {$employee->names} {$employee->lastnames} tiene vacaciones aprobadas del " .
+                                Carbon::parse($driverVacation->request_date)->format('d/m/Y') . " al " .
+                                Carbon::parse($driverVacation->end_date)->format('d/m/Y')
+                ], 400);
             }
+
+            // Validar vacaciones de ayudantes
+            foreach ($helpers as $helperId) {
+                $helperVacation = $this->checkVacation($helperId, $request->start_date, $end_date);
+                if ($helperVacation) {
+                    $employee = Employee::find($helperId);
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => "El ayudante {$employee->names} {$employee->lastnames} tiene vacaciones aprobadas del " .
+                                    Carbon::parse($helperVacation->request_date)->format('d/m/Y') . " al " .
+                                    Carbon::parse($helperVacation->end_date)->format('d/m/Y')
+                    ], 400);
+                }
+            }
+            // FIN DE VALIDACIÓN DE VACACIONES
+
+            $groupDays = $request->days ?? [];
+            $daysOfWeek = [
+                'Lunes' => Carbon::MONDAY,
+                'Martes' => Carbon::TUESDAY,
+                'Miércoles' => Carbon::WEDNESDAY,
+                'Jueves' => Carbon::THURSDAY,
+                'Viernes' => Carbon::FRIDAY,
+                'Sábado' => Carbon::SATURDAY,
+                'Domingo' => Carbon::SUNDAY,
+            ];
+
+
+            $startDate = Carbon::parse($request->start_date);
+            $endDate = Carbon::parse($end_date);
+            $errores = [];
+
+            if ($request->end_date) {
+                // CREACIÓN CON RANGO DE FECHAS
+                while ($startDate->lte($endDate)) {
+                    if (in_array($startDate->dayOfWeek, array_map(function($day) use ($daysOfWeek) {
+                        return $daysOfWeek[$day];
+                    }, $groupDays))) {
+
+                        $dateStr = $startDate->toDateString();
+
+                        // Validaciones completas
+                        $validations = $this->runAllValidations(
+                            $request->driver_id,
+                            $helpers,
+                            $employeeGroup->vehicle_id,
+                            $employeeGroup->shift_id,
+                            $employeeGroup->zone_id,
+                            $dateStr,
+                            $employeeGroup->name,
+                            $end_date
+                        );
+
+                        if (!$validations['valid']) {
+                            $errores = array_merge($errores, $validations['errors']);
+                            $startDate->addDay();
+                            continue;
+                        }
+
+                        // Crear scheduling
+                        $scheduling = Scheduling::create([
+                            'date' => $dateStr,
+                            'group_id' => $employeeGroup->id,
+                            'shift_id' => $employeeGroup->shift_id,
+                            'vehicle_id' => $employeeGroup->vehicle_id,
+                            'zone_id' => $employeeGroup->zone_id,
+                            'notes' => '',
+                            'status' => 1,
+                        ]);
+
+                        Groupdetail::create([
+                            'employee_id' => $request->driver_id,
+                            'scheduling_id' => $scheduling->id,
+                        ]);
+
+                        foreach ($helpers as $helper) {
+                            Groupdetail::create([
+                                'employee_id' => $helper,
+                                'scheduling_id' => $scheduling->id,
+                            ]);
+                        }
+                    }
+
+                    $startDate->addDay();
+                }
+            } else {
+                // CREACIÓN DE UN SOLO DÍA
+                $dateStr = $startDate->toDateString();
+
+                $validations = $this->runAllValidations(
+                    $request->driver_id,
+                    $helpers,
+                    $employeeGroup->vehicle_id,
+                    $employeeGroup->shift_id,
+                    $employeeGroup->zone_id,
+                    $dateStr,
+                    $employeeGroup->name,
+                    null
+                );
+
+                if (!$validations['valid']) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'Errores de validación',
+                        'errors' => $validations['errors']
+                    ], 400);
+                }
+
+                $scheduling = Scheduling::create([
+                    'date' => $dateStr,
+                    'group_id' => $employeeGroup->id,
+                    'shift_id' => $employeeGroup->shift_id,
+                    'vehicle_id' => $employeeGroup->vehicle_id,
+                    'zone_id' => $employeeGroup->zone_id,
+                    'notes' => '',
+                    'status' => 1,
+                ]);
+
+                Groupdetail::create([
+                    'employee_id' => $request->driver_id,
+                    'scheduling_id' => $scheduling->id,
+                ]);
+
+                foreach ($helpers as $helper) {
+                    Groupdetail::create([
+                        'employee_id' => $helper,
+                        'scheduling_id' => $scheduling->id,
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            $response = ['success' => 'Programación creada correctamente.'];
+            if (!empty($errores)) {
+                $response['warnings'] = $errores;
+            }
+
+            return response()->json($response, 200);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Error al crear la programación: ' . $th->getMessage()
+            ], 500);
+        }
     }
+
+    /**
+     * Método helper para ejecutar todas las validaciones
+     */
+    private function runAllValidations($driverId, $helpers, $vehicleId, $shiftId, $zoneId, $date, $groupName, $endDate = null)
+{
+    $errores = [];
+
+    // VALIDAR VACACIONES DEL CONDUCTOR
+    $driverVacation = $this->validateNoVacation($driverId, $date, $endDate);
+    if (!$driverVacation['valid']) {
+        $errores[] = "[{$groupName}] {$driverVacation['message']}";
+    }
+
+    // Validar conductor
+    $driverContract = $this->validateActiveContract($driverId, $date);
+    if (!$driverContract['valid']) {
+        $errores[] = "[{$groupName}] {$driverContract['message']}";
+    }
+
+    $driverAvailability = $this->validateEmployeeAvailability($driverId, $date, $shiftId);
+    if (!$driverAvailability['valid']) {
+        $errores[] = "[{$groupName}] {$driverAvailability['message']}";
+    }
+
+    // Validar ayudantes
+    foreach ($helpers as $helperId) {
+        // VALIDAR VACACIONES DE AYUDANTE
+        $helperVacation = $this->validateNoVacation($helperId, $date, $endDate);
+        if (!$helperVacation['valid']) {
+            $errores[] = "[{$groupName}] {$helperVacation['message']}";
+        }
+
+        $helperContract = $this->validateActiveContract($helperId, $date);
+        if (!$helperContract['valid']) {
+            $errores[] = "[{$groupName}] {$helperContract['message']}";
+        }
+
+        $helperAvailability = $this->validateEmployeeAvailability($helperId, $date, $shiftId);
+        if (!$helperAvailability['valid']) {
+            $errores[] = "[{$groupName}] {$helperAvailability['message']}";
+        }
+    }
+
+    // Validar vehículo
+    $vehicleValidation = $this->validateVehicleAvailability($vehicleId, $date, $shiftId);
+    if (!$vehicleValidation['valid']) {
+        $errores[] = "[{$groupName}] {$vehicleValidation['message']}";
+    }
+
+    // Validar duplicados
+    $duplicateValidation = $this->validateNoDuplicateScheduling($date, $shiftId, $vehicleId, $driverId, $helpers);
+    if (!$duplicateValidation['valid']) {
+        $errores[] = "[{$groupName}] {$duplicateValidation['message']}";
+    }
+
+    return [
+        'valid' => empty($errores),
+        'errors' => $errores
+    ];
+}
 
     public function validationVacations(Request $request){
         $ListaNoDisponibles = [];
@@ -875,7 +1096,7 @@ class SchedulingController extends Controller
 
         foreach( $helpers as $helper) {
             $vacation = $this->checkVacation($helper, $start_date, $end_date);
-           
+
             if($vacation){
                 array_push($ListaNoDisponibles, $vacation->employee_id);
                 array_push($ListaVacaciones, $vacation);
@@ -890,13 +1111,124 @@ class SchedulingController extends Controller
         ]);
     }
 
+
+
+
+    /**
+ * Ejecutar todas las validaciones incluyendo vacaciones
+ * (versión completa para programación masiva)
+ */
+private function runAllValidationsWithVacations($driverId, $helpers, $vehicleId, $shiftId, $zoneId, $date, $groupName, $endDate = null)
+{
+    $errores = [];
+
+    // 1. VALIDAR VACACIONES DEL CONDUCTOR
+    $driverVacation = $this->checkVacation($driverId, $date, $endDate ?? $date);
+    if ($driverVacation) {
+        $employee = Employee::find($driverId);
+        $errores[] = "[{$groupName} - {$date}] El conductor {$employee->names} {$employee->lastnames} tiene vacaciones del " .
+                    Carbon::parse($driverVacation->request_date)->format('d/m/Y') . " al " .
+                    Carbon::parse($driverVacation->end_date)->format('d/m/Y');
+    }
+
+    // 2. VALIDAR VACACIONES DE AYUDANTES
+    foreach ($helpers as $helperId) {
+        $helperVacation = $this->checkVacation($helperId, $date, $endDate ?? $date);
+        if ($helperVacation) {
+            $employee = Employee::find($helperId);
+            $errores[] = "[{$groupName} - {$date}] El ayudante {$employee->names} {$employee->lastnames} tiene vacaciones del " .
+                        Carbon::parse($helperVacation->request_date)->format('d/m/Y') . " al " .
+                        Carbon::parse($helperVacation->end_date)->format('d/m/Y');
+        }
+    }
+
+    // 3. VALIDAR CONTRATO CONDUCTOR
+    $driverContract = $this->validateActiveContract($driverId, $date);
+    if (!$driverContract['valid']) {
+        $errores[] = "[{$groupName} - {$date}] {$driverContract['message']}";
+    }
+
+    // 4. VALIDAR DISPONIBILIDAD CONDUCTOR
+    $driverAvailability = $this->validateEmployeeAvailability($driverId, $date, $shiftId);
+    if (!$driverAvailability['valid']) {
+        $errores[] = "[{$groupName} - {$date}] {$driverAvailability['message']}";
+    }
+
+    // 5. VALIDAR AYUDANTES
+    foreach ($helpers as $helperId) {
+        $helperContract = $this->validateActiveContract($helperId, $date);
+        if (!$helperContract['valid']) {
+            $errores[] = "[{$groupName} - {$date}] {$helperContract['message']}";
+        }
+
+        $helperAvailability = $this->validateEmployeeAvailability($helperId, $date, $shiftId);
+        if (!$helperAvailability['valid']) {
+            $errores[] = "[{$groupName} - {$date}] {$helperAvailability['message']}";
+        }
+    }
+
+    // 6. VALIDAR VEHÍCULO
+    $vehicleValidation = $this->validateVehicleAvailability($vehicleId, $date, $shiftId);
+    if (!$vehicleValidation['valid']) {
+        $errores[] = "[{$groupName} - {$date}] {$vehicleValidation['message']}";
+    }
+
+    // 7. VALIDAR DUPLICADOS
+    $duplicateValidation = $this->validateNoDuplicateScheduling($date, $shiftId, $vehicleId, $driverId, $helpers);
+    if (!$duplicateValidation['valid']) {
+        $errores[] = "[{$groupName} - {$date}] {$duplicateValidation['message']}";
+    }
+
+    return [
+        'valid' => empty($errores),
+        'errors' => $errores
+    ];
+}
+
+
+
+
+
+    /**
+ * Validar que el empleado NO esté de vacaciones
+ */
+private function validateNoVacation($employeeId, $date, $endDate = null)
+{
+    $employee = Employee::find($employeeId);
+
+    if (!$employee) {
+        return [
+            'valid' => false,
+            'message' => "El empleado no existe"
+        ];
+    }
+
+    $vacation = $this->checkVacation($employeeId, $date, $endDate ?? $date);
+
+    if ($vacation) {
+        return [
+            'valid' => false,
+            'message' => "El empleado {$employee->names} {$employee->lastnames} tiene vacaciones aprobadas del " .
+                        Carbon::parse($vacation->request_date)->format('d/m/Y') . " al " .
+                        Carbon::parse($vacation->end_date)->format('d/m/Y')
+        ];
+    }
+
+    return ['valid' => true];
+}
+
+
+
+
+
+
     public function validationDuplicate($fecha,$zona,$shift){
         $isDuplicate = false;
         $scheduling = Scheduling::where('date', $fecha)
             ->where('zone_id', $zona)
             ->where('shift_id', $shift)
             ->first();
-        
+
         if ($scheduling) {
             $isDuplicate = true;
         }
@@ -904,8 +1236,264 @@ class SchedulingController extends Controller
         return $isDuplicate;
     }
 
-  
 
 
-        
+
+
+
+
+
+
+
+    /**
+     * Validar que el empleado tenga contrato activo
+     */
+    private function validateActiveContract($employeeId, $date)
+    {
+        $employee = Employee::with(['contracts' => function($query) use ($date) {
+            $query->where('is_active', 1)
+                ->where('start_date', '<=', $date)
+                ->where(function($q) use ($date) {
+                    $q->whereNull('end_date')
+                        ->orWhere('end_date', '>=', $date);
+                });
+        }])->find($employeeId);
+
+        if (!$employee || $employee->contracts->isEmpty()) {
+            return [
+                'valid' => false,
+                'message' => "El empleado {$employee->names} {$employee->lastnames} no tiene contrato activo para la fecha seleccionada"
+            ];
+        }
+
+        return ['valid' => true];
+    }
+
+    /**
+     * Validar disponibilidad del vehículo
+     * - No debe estar en mantenimiento
+     * - No debe estar programado en otro turno/zona el mismo día
+     */
+    private function validateVehicleAvailability($vehicleId, $date, $shiftId, $excludeSchedulingId = null)
+    {
+        $vehicle = Vehicle::find($vehicleId);
+
+        if (!$vehicle) {
+            return [
+                'valid' => false,
+                'message' => "El vehículo no existe"
+            ];
+        }
+
+        // 1. Verificar si está en mantenimiento ese día
+        $inMaintenance = DB::table('maintenance_activities as ma')
+            ->join('maintenance_schedules as ms', 'ma.schedule_id', '=', 'ms.id')
+            ->where('ms.vehicle_id', $vehicleId)
+            ->whereDate('ma.activity_date', $date)
+            ->where('ma.completed', 0) // No completado = aún en mantenimiento
+            ->exists();
+
+        if ($inMaintenance) {
+            return [
+                'valid' => false,
+                'message' => "El vehículo {$vehicle->code} tiene mantenimiento programado para el {$date}"
+            ];
+        }
+
+        // 2. Verificar si ya está programado en otro scheduling el mismo día/turno
+        $query = Scheduling::where('vehicle_id', $vehicleId)
+            ->whereDate('date', $date)
+            ->where('shift_id', $shiftId)
+            ->whereIn('status', [1, 2]); // Programado o Completado/Iniciado
+
+        if ($excludeSchedulingId) {
+            $query->where('id', '!=', $excludeSchedulingId);
+        }
+
+        if ($query->exists()) {
+            return [
+                'valid' => false,
+                'message' => "El vehículo {$vehicle->code} ya está programado para el turno seleccionado en la fecha {$date}"
+            ];
+        }
+
+        return ['valid' => true];
+    }
+
+    /**
+     * Validar que no exista duplicado de programación
+     * Según requisito: "No debe permitir crear 2 o más programaciones que coincidan
+     * en Turno, Vehículo, Conductor y Ayudantes"
+     */
+    private function validateNoDuplicateScheduling($date, $shiftId, $vehicleId, $driverId, $helpers, $excludeSchedulingId = null)
+    {
+        // 1. Buscar schedulings del mismo turno, fecha y vehículo
+        $query = Scheduling::where('date', $date)
+            ->where('shift_id', $shiftId)
+            ->where('vehicle_id', $vehicleId)
+            ->whereIn('status', [1, 2]); // Solo activos
+
+        if ($excludeSchedulingId) {
+            $query->where('id', '!=', $excludeSchedulingId);
+        }
+
+        $existingSchedulings = $query->get();
+
+        if ($existingSchedulings->isEmpty()) {
+            return ['valid' => true];
+        }
+
+        // 2. Verificar si alguno tiene el mismo personal
+        foreach ($existingSchedulings as $scheduling) {
+            $existingEmployees = $scheduling->groupdetail->pluck('employee_id')->toArray();
+            $newEmployees = array_merge([$driverId], $helpers);
+
+            // Si todos los empleados coinciden, es duplicado
+            if (count($existingEmployees) === count($newEmployees) &&
+                empty(array_diff($existingEmployees, $newEmployees))) {
+                return [
+                    'valid' => false,
+                    'message' => "Ya existe una programación idéntica para esta fecha, turno, vehículo y personal"
+                ];
+            }
+        }
+
+        return ['valid' => true];
+    }
+
+    /**
+     * Validar que el personal no esté programado en otro turno/zona el mismo día
+     */
+    private function validateEmployeeAvailability($employeeId, $date, $shiftId, $excludeSchedulingId = null)
+    {
+        $employee = Employee::find($employeeId);
+
+        if (!$employee) {
+            return [
+                'valid' => false,
+                'message' => "El empleado no existe"
+            ];
+        }
+
+        // Buscar si el empleado ya está en otro scheduling ese día/turno
+        $query = Groupdetail::whereHas('scheduling', function($q) use ($date, $shiftId, $excludeSchedulingId) {
+            $q->whereDate('date', $date)
+            ->where('shift_id', $shiftId)
+            ->whereIn('status', [1, 2]);
+
+            if ($excludeSchedulingId) {
+                $q->where('id', '!=', $excludeSchedulingId);
+            }
+        })->where('employee_id', $employeeId);
+
+        if ($query->exists()) {
+            return [
+                'valid' => false,
+                'message' => "El empleado {$employee->names} {$employee->lastnames} ya está programado en otro grupo para esta fecha y turno"
+            ];
+        }
+
+        return ['valid' => true];
+    }
+
+
+
+
+
+    /**
+ * Validar disponibilidad completa ANTES de guardar
+ */
+public function validateAvailability(Request $request)
+{
+    try {
+        if (!$request->start_date) {
+            return response()->json([
+                'message' => 'La fecha de inicio es requerida'
+            ], 400);
+        }
+
+        $end_date = $request->end_date ?? $request->start_date;
+        $todosLosErrores = [];
+
+        // Validar TODO (igual que en store, pero sin guardar)
+        foreach ($request->groups as $group) {
+            $employeeGroup = EmployeeGroup::find($group['employee_group_id']);
+
+            if (!$employeeGroup) {
+                $todosLosErrores[] = "El grupo {$group['employee_group_id']} no existe";
+                continue;
+            }
+
+            $groupDays = explode(',', $employeeGroup->days);
+            $daysOfWeek = [
+                'Lunes' => Carbon::MONDAY,
+                'Martes' => Carbon::TUESDAY,
+                'Miércoles' => Carbon::WEDNESDAY,
+                'Jueves' => Carbon::THURSDAY,
+                'Viernes' => Carbon::FRIDAY,
+                'Sábado' => Carbon::SATURDAY,
+                'Domingo' => Carbon::SUNDAY,
+            ];
+
+            $startDate = Carbon::parse($request->start_date);
+            $endDate = Carbon::parse($end_date);
+            $helpers = $group['helpers'] ?? [];
+
+            while ($startDate->lte($endDate)) {
+                if (in_array($startDate->dayOfWeek, array_map(function($day) use ($daysOfWeek) {
+                    return $daysOfWeek[$day];
+                }, $groupDays))) {
+
+                    $dateStr = $startDate->toDateString();
+
+                    $validations = $this->runAllValidationsWithVacations(
+                        $group['driver_id'],
+                        $helpers,
+                        $employeeGroup->vehicle_id,
+                        $employeeGroup->shift_id,
+                        $employeeGroup->zone_id,
+                        $dateStr,
+                        $employeeGroup->name,
+                        $end_date
+                    );
+
+                    if (!$validations['valid']) {
+                        $todosLosErrores = array_merge($todosLosErrores, $validations['errors']);
+                    }
+                }
+
+                $startDate->addDay();
+            }
+
+            $startDate = Carbon::parse($request->start_date);
+        }
+
+        // Si hay errores, agrupar y retornar
+        if (!empty($todosLosErrores)) {
+            $erroresAgrupados = $this->agruparErrores($todosLosErrores);
+
+            return response()->json([
+                'valid' => false,
+                'message' => 'Se encontraron los siguientes problemas:',
+                'errors' => $erroresAgrupados
+            ], 400);
+        }
+
+        // Todo OK
+        return response()->json([
+            'valid' => true,
+            'message' => 'Todas las validaciones pasaron correctamente. Puede proceder a registrar la programación.'
+        ], 200);
+
+    } catch (\Throwable $th) {
+        return response()->json([
+            'message' => 'Error al validar: ' . $th->getMessage()
+        ], 500);
+    }
+}
+
+
+
+
+
 }

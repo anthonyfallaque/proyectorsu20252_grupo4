@@ -115,16 +115,11 @@ class ContractController extends Controller
 
             if ($lastTemporalContract) {
                 $endDate = \Carbon\Carbon::parse($lastTemporalContract->end_date);
-                $fourMonthsLater = $endDate->addMonths(4);
-
-                if (now() < $fourMonthsLater) {
+                $twoMonthsLater = $endDate->addMonths(2);
+                if (now() < $twoMonthsLater) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Este empleado tuvo un contrato temporal que terminó el ' .
-                            $lastTemporalContract->end_date->format('d/m/Y') .
-                            '. Debe esperar hasta el ' .
-                            $fourMonthsLater->format('d/m/Y') .
-                            ' para poder tener un nuevo contrato (período de enfriamiento de 4 meses).'
+                        'message' => '... período de enfriamiento de 2 meses).'
                     ], 422);
                 }
             }

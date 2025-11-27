@@ -1,26 +1,27 @@
 {!! Form::open(['route' => 'admin.vehicles.storeImages', 'files' => true, 'method' => 'POST']) !!}
-    {!! Form::hidden('vehicle_id', $vehicle->id) !!}
+{!! Form::hidden('vehicle_id', $vehicle->id) !!}
 
-    <div class="row mb-3">
-        <div class="col-md-12">
-            {!! Form::file('image', ['id' => 'logo', 'accept' => 'image/*', 'class' => 'd-none']) !!}
-            <div id="imageButton" class="border border-secondary rounded-lg shadow-sm text-center p-3 mb-3" style="cursor: pointer; background-color: #f8f9fa;">
-                <img src="{{ asset('storage/brand_logo/producto_var.webp') }}" 
-                     alt="Logo" class="img-thumbnail mb-2" style="height: 180px; object-fit: contain;">
-                <p class="mb-0 text-secondary"><i class="fas fa-upload"></i> Haz clic para seleccionar una imagen</p>
-            </div>
+<div class="mb-3 row">
+    <div class="col-md-12">
+        {!! Form::file('image', ['id' => 'logo', 'accept' => 'image/*', 'class' => 'd-none']) !!}
+        <div id="imageButton" class="p-3 mb-3 text-center border rounded-lg shadow-sm border-secondary"
+            style="cursor: pointer; background-color: #f8f9fa;">
+            <img src="{{ asset('storage/brand_logo/no_image.png') }}" alt="Logo" class="mb-2 img-thumbnail"
+                style="height: 180px; object-fit: contain;">
+            <p class="mb-0 text-secondary"><i class="fas fa-upload"></i> Haz clic para seleccionar una imagen</p>
+        </div>
 
-            <div class="form-check mb-3">
-                {!! Form::checkbox('profile', 1, true, ['class' => 'form-check-input', 'id' => 'profile']) !!}
-                <label class="form-check-label" for="profile">Establecer como imagen principal</label>
-            </div>
+        <div class="mb-3 form-check">
+            {!! Form::checkbox('profile', 1, true, ['class' => 'form-check-input', 'id' => 'profile']) !!}
+            <label class="form-check-label" for="profile">Establecer como imagen principal</label>
+        </div>
 
-            <div class="d-flex justify-content-end">
-                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Guardar</button>
-                
-            </div>
+        <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Guardar</button>
+
         </div>
     </div>
+</div>
 {!! Form::close() !!}
 
 
@@ -29,37 +30,39 @@
 <h5 class="mt-4">Imágenes del vehículo</h5>
 <div class="row">
     @forelse ($imagesVehicle as $image)
-        <div class="col-md-3 mb-4">
-            <div class="card border-0 shadow-sm h-100">
+        <div class="mb-4 col-md-3">
+            <div class="border-0 shadow-sm card h-100">
                 <img src="{{ asset($image->image) }}" class="card-img-top" style="height: 180px; object-fit: cover;">
-                <div class="card-body text-center">
+                <div class="text-center card-body">
                     @if ($image->profile)
-                        <span class="badge badge-success mb-2">Imagen principal</span>
+                        <span class="mb-2 badge badge-success">Imagen principal</span>
                     @else
-                        <form method="POST" action="{{ route('admin.vehicles.setProfile', $image->id) }}" class="mb-2 form-set-profile">
+                        <form method="POST" action="{{ route('admin.vehicles.setProfile', $image->id) }}"
+                            class="mb-2 form-set-profile">
                             @csrf
                             <button type="submit" class="btn btn-sm btn-outline-info">Establecer</button>
                         </form>
                     @endif
 
 
-                        <form method="POST" action="{{ route('admin.vehicles.deleteImage', $image->id) }}" class="form-delete-image">
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
-                        </form>
+                    <form method="POST" action="{{ route('admin.vehicles.deleteImage', $image->id) }}"
+                        class="form-delete-image">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                    </form>
                 </div>
             </div>
         </div>
     @empty
-        <div class="col-12 text-center text-muted">No hay imágenes registradas.</div>
+        <div class="text-center col-12 text-muted">No hay imágenes registradas.</div>
     @endforelse
 </div>
 
 <script>
     $('#logo').change(function() {
         const file = this.files[0];
-        if(file){
+        if (file) {
             const reader = new FileReader();
             reader.onload = function(e) {
                 $('#imageButton img').attr('src', e.target.result);

@@ -60,4 +60,12 @@ class Employee extends Model
     {
         return $this->hasMany(Contract::class);
     }
+
+    public function schedules()
+    {
+        return $this->hasMany(MaintenanceSchedule::class, 'responsible_id');
+    }
+
+
+
 }

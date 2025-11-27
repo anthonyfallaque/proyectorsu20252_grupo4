@@ -63,7 +63,7 @@ return [
     |
     */
 
-    'logo' => '<b>Admin</b>LTE',
+    'logo' => '<b>Project</b>RSU',
     'logo_img' => 'vendor/adminlte/dist/img/AdminLTELogo.png',
     'logo_img_class' => 'brand-image img-circle elevation-3',
     'logo_img_xl' => null,
@@ -257,7 +257,7 @@ return [
     */
 
     'use_route_url' => false,
-    'dashboard_url' => 'home',
+    'dashboard_url' => 'dashboard',
     'logout_url' => 'logout',
     'login_url' => 'login',
     'register_url' => 'register',
@@ -343,7 +343,12 @@ return [
                     'text' => 'Vehículo',
                     'route' => 'admin.vehicles.index',
                     'icon'  => 'fas fa-car-side',
-                ]
+                ],
+                [
+                    'text' => 'Mantenimiento',
+                    'url'  => 'admin/maintenances',
+                    'icon' => 'fas fa-fw fa-tools',
+                ],
             ]
         ],
         [
@@ -409,6 +414,11 @@ return [
             'text' => 'GESTIÓN DE CAMBIOS',
             'icon' => 'fas fa-exchange-alt',
             'submenu'=>[
+                [
+                    'text' => 'Motivos',
+                    'route' => 'admin.reasons.index',
+                    'icon' => 'fas fa-fw fa-clipboard-list',
+                ],
 
                 [
                     'text' => 'Cambios',
@@ -511,7 +521,7 @@ return [
                 [
                     'type' => 'js',
                     'asset' => false,
-                    'location' => '//cdn.jsdelivr.net/npm/sweetalert2@8',
+                    'location' => '//cdn.jsdelivr.net/npm/sweetalert2@11',
                 ],
             ],
         ],

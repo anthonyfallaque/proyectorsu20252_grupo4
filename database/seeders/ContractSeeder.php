@@ -15,7 +15,7 @@ class ContractSeeder extends Seeder
     public function run(): void
     {
         $now = Carbon::now();
-        
+
         $contracts = [
             [
                 'employee_id' => 1,
@@ -25,7 +25,7 @@ class ContractSeeder extends Seeder
                 'salary' => 3500.00,
                 'position_id' => 1,
                 'department_id' => 1,
-                'vacation_days_per_year' => 20, 
+                'vacation_days_per_year' => 20,
                 'is_active' => true,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -33,13 +33,13 @@ class ContractSeeder extends Seeder
             [
                 'employee_id' => 2,
                 'contract_type' => 'Temporal',
-                'start_date' => '2025-06-01',
-                'end_date' => '2025-09-15', 
+                'start_date' => '2025-12-01',
+                'end_date' => '2026-02-15',
                 'salary' => 1500.00,
                 'position_id' => 2,
                 'department_id' => 1,
                 'vacation_days_per_year' => 0,
-                'is_active' => true, 
+                'is_active' => true,
                 'created_at' => $now,
                 'updated_at' => $now,
             ],
@@ -59,13 +59,13 @@ class ContractSeeder extends Seeder
             [
                 'employee_id' => 4,
                 'contract_type' => 'Temporal',
-                'start_date' => '2024-09-01',
-                'end_date' => '2025-04-13', 
+                'start_date' => '2025-12-01',
+                'end_date' => '2026-02-13',
                 'salary' => 1800.00,
                 'position_id' => 4,
                 'department_id' => 1,
                 'vacation_days_per_year' => 0,
-                'is_active' => false, 
+                'is_active' => true,
                 'created_at' => $now,
                 'updated_at' => $now,
             ],
@@ -90,7 +90,7 @@ class ContractSeeder extends Seeder
                 'salary' => 4200.00,
                 'position_id' => 2,
                 'department_id' => 1,
-                'vacation_days_per_year' => 30, 
+                'vacation_days_per_year' => 30,
                 'is_active' => true,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -103,7 +103,7 @@ class ContractSeeder extends Seeder
                 'salary' => 4500.00,
                 'position_id' => 3,
                 'department_id' => 1,
-                'vacation_days_per_year' => 30, 
+                'vacation_days_per_year' => 30,
                 'is_active' => true,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -122,9 +122,9 @@ class ContractSeeder extends Seeder
                 'updated_at' => $now,
             ],
         ];
-        
+
         DB::table('contracts')->insert($contracts);
-        
+
     }
-    
+
 }

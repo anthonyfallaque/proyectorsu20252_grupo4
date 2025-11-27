@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Yajra\DataTables\Facades\DataTables;
 
+
+
 class EmployeeController extends Controller
 {
     public function index(Request $request)
@@ -78,19 +80,31 @@ class EmployeeController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        // Verificar si el tipo de empleado requiere licencia
+        $employeeType = \App\Models\EmployeeType::find($request->type_id);
+        $requiresLicense = $employeeType && stripos($employeeType->name, 'conductor') !== false;
+
+        $rules = [
             'dni' => 'required|string|size:8|unique:employees,dni|regex:/^[0-9]+$/',
             'names' => 'required|string|max:100|regex:/^[a-zA-ZÀ-ÿ\s]+$/',
             'lastnames' => 'required|string|max:200|regex:/^[a-zA-ZÀ-ÿ\s]+$/',
             'email' => 'nullable|email|max:100|unique:employees,email',
-            'phone' => 'nullable|string|max:20',
+            'phone' => 'nullable|string|max:20|unique:employees,phone',
             'address' => 'required|string|max:200|min:10',
             'type_id' => 'required|exists:employeetype,id',
             'birthday' => 'required|date|before:-18 years',
-            'license' => 'nullable|string|max:20|unique:employees,license',
             'password' => 'required|string|min:8',
             'photo' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ], [
+        ];
+
+        // Agregar validación de licencia solo si es conductor
+        if ($requiresLicense) {
+            $rules['license'] = 'required|string|max:20|unique:employees,license';
+        } else {
+            $rules['license'] = 'nullable|string|max:20|unique:employees,license';
+        }
+
+        $messages = [
             'dni.required' => 'El DNI es obligatorio.',
             'dni.size' => 'El DNI debe tener exactamente 8 dígitos.',
             'dni.unique' => 'Este DNI ya está registrado.',
@@ -101,19 +115,23 @@ class EmployeeController extends Controller
             'lastnames.regex' => 'Los apellidos solo pueden contener letras y espacios.',
             'email.email' => 'El formato del email no es válido.',
             'email.unique' => 'Este email ya está registrado.',
+            'phone.unique' => 'Este teléfono ya está registrado.',
             'address.required' => 'La dirección es obligatoria.',
             'address.min' => 'La dirección debe tener al menos 10 caracteres.',
             'type_id.required' => 'Debe seleccionar un tipo de empleado.',
             'type_id.exists' => 'El tipo de empleado seleccionado no es válido.',
             'birthday.required' => 'La fecha de nacimiento es obligatoria.',
             'birthday.before' => 'Debe ser mayor de 18 años.',
+            'license.required' => 'La licencia es obligatoria para conductores.',
             'license.unique' => 'Esta licencia ya está registrada.',
             'password.required' => 'La contraseña es obligatoria.',
             'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
             'photo.image' => 'El archivo debe ser una imagen.',
             'photo.mimes' => 'La imagen debe ser JPG, PNG o JPEG.',
             'photo.max' => 'La imagen no puede ser mayor a 2MB.',
-        ]);
+        ];
+
+        $request->validate($rules, $messages);
 
         try {
             DB::beginTransaction();
@@ -187,7 +205,13 @@ class EmployeeController extends Controller
                 'max:100',
                 Rule::unique('employees', 'email')->ignore($employee->id)
             ],
-            'phone' => 'nullable|string|max:20|regex:/^(\+?51)?9[0-9]{8}$/',
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20',
+                'regex:/^(\+?51)?9[0-9]{8}$/',
+                Rule::unique('employees', 'phone')->ignore($employee->id)
+            ],
             'address' => 'required|string|max:200|min:10',
             'type_id' => 'required|exists:employeetype,id',
             'birthday' => 'required|date|before:-18 years',
@@ -222,6 +246,7 @@ class EmployeeController extends Controller
             'lastnames.regex' => 'Los apellidos solo pueden contener letras y espacios.',
             'email.email' => 'El formato del email no es válido.',
             'email.unique' => 'Este email ya está registrado.',
+            'phone.unique' => 'Este teléfono ya está registrado.',
             'address.required' => 'La dirección es obligatoria.',
             'address.min' => 'La dirección debe tener al menos 10 caracteres.',
             'type_id.required' => 'Debe seleccionar un tipo de empleado.',
@@ -239,7 +264,7 @@ class EmployeeController extends Controller
 
         try {
             DB::beginTransaction();
-           
+
             $data = [
                 'dni' => trim($request->dni),
                 'names' => trim($request->names),
@@ -256,8 +281,8 @@ class EmployeeController extends Controller
             // Manejar la foto
             if ($request->hasFile('photo')) {
                 // Eliminar foto anterior si existe
-                if ($employee->photo && \Storage::exists('public/employees/' . $employee->photo)) {
-                    \Storage::delete('public/employees/' . $employee->photo);
+                if ($employee->photo && Storage::exists('public/employees/' . $employee->photo)) {
+                    Storage::delete('public/employees/' . $employee->photo);
                 }
 
                 $photo = $request->file('photo');
@@ -267,7 +292,7 @@ class EmployeeController extends Controller
             }
 
             if ($request->password) {
-                $data['password'] = Hash::make($request->password);  // Usamos la clave 'password' para almacenar la contraseña hasheada
+                $data['password'] = Hash::make($request->password);
             }
 
             $employee->update($data);
@@ -295,8 +320,8 @@ class EmployeeController extends Controller
             DB::beginTransaction();
 
             // Eliminar la foto si existe
-            if ($employee->photo && \Storage::exists('public/employees/' . $employee->photo)) {
-                \Storage::delete('public/employees/' . $employee->photo);
+            if ($employee->photo && Storage::exists('public/employees/' . $employee->photo)) {
+                Storage::delete('public/employees/' . $employee->photo);
             }
 
             $employee->delete();
@@ -340,12 +365,17 @@ class EmployeeController extends Controller
         $employeeId = $request->input('employee_id');
 
         // Validar que el campo sea permitido
-        if (!in_array($field, ['dni', 'email', 'license'])) {
+        if (!in_array($field, ['dni', 'email', 'license', 'phone'])) {
             return response()->json(['unique' => false], 400);
         }
 
-        $query = Employee::where($field, $value);
-        
+        // Si el valor está vacío, considerarlo como único (campo opcional)
+        if (empty($value) || trim($value) === '') {
+            return response()->json(['unique' => true]);
+        }
+
+        $query = Employee::where($field, trim($value));
+
         if ($employeeId) {
             $query->where('id', '!=', $employeeId);
         }
@@ -353,5 +383,13 @@ class EmployeeController extends Controller
         $exists = $query->exists();
 
         return response()->json(['unique' => !$exists]);
+    }
+
+    // Obtener la fecha máxima para el campo de cumpleaños (18 años atrás)
+    public function getMaxBirthdate()
+    {
+        return response()->json([
+            'max_date' => now()->subYears(18)->format('Y-m-d')
+        ]);
     }
 }

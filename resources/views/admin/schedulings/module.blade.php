@@ -285,8 +285,8 @@
                                     <!-- Agregar el botón de editar solo si la zona está incompleta -->
                                     ${zona.status === 'incompleta' ?
                                         `<button class="btn btn-warning btn-sm btnEditar" alt="Reprogramar" id="${zona.scheduling_id}">
-                                                <i class="fas fa-retweet"></i>
-                                            </button>`
+                                                    <i class="fas fa-retweet"></i>
+                                                </button>`
                                         : ''
                                     }
                                 </div>

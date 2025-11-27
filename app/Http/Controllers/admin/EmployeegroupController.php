@@ -27,9 +27,9 @@ class EmployeegroupController extends Controller
             $employeeGroups = Employeegroup::with('shift', 'vehicle', 'zone')
             ->withCount('configgroup')
             ->get();
-            
+
             return DataTables::of($employeeGroups)
-            
+
                 ->addColumn('days', function ($employeeGroup) {
                     return $employeeGroup->days;
                 })
@@ -54,7 +54,7 @@ class EmployeegroupController extends Controller
                     }else{
                         $viewBtn = '';
                     }
-                    
+
                     $deleteBtn = '<form class="delete d-inline" action="' . route('admin.employeegroups.destroy', $employeeGroup->id) . '" method="POST">
                                     ' . csrf_field() . '
                                     ' . method_field('DELETE') . '
@@ -62,7 +62,7 @@ class EmployeegroupController extends Controller
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>';
-                    
+
                     return $editBtn . ' ' . $viewBtn . ' ' . $deleteBtn;
                 })
                 ->rawColumns(['action'])
@@ -134,8 +134,8 @@ class EmployeegroupController extends Controller
                         ]);
                     }
                 }
-             
-               
+
+
                 return response()->json([
                     'message' => 'Grupo de personal creado exitosamente'
                 ], 200);
@@ -164,11 +164,11 @@ class EmployeegroupController extends Controller
         $zones = Zone::all();
         $shifts = Shift::all();
         $vehicles = Vehicle::all();
-    
+
         // Obtén los tipos de empleado para conductor y ayudante
         $conductorType = EmployeeType::whereRaw('LOWER(name) = ?', ['conductor'])->first();
         $helperType = EmployeeType::whereRaw('LOWER(name) = ?', ['ayudante'])->first();
-    
+
         // Todos los conductores y ayudantes disponibles (para el select)
         $employeesConductor = $conductorType
             ? Employee::where('type_id', $conductorType->id)
@@ -183,7 +183,7 @@ class EmployeegroupController extends Controller
                     $query->where('is_active', 1);
                 })->get()
             : collect();
-       
+
         // El grupo con sus empleados asociados filtrados por tipo
         $employeeGroup = Employeegroup::with(['conductors', 'helpers'])->findOrFail($id);
         $driverId = optional($employeeGroup->conductors->first())->id;
@@ -198,13 +198,13 @@ class EmployeegroupController extends Controller
             'driverId'
         ));
     }
-    
+
 
     public function data(){
         $employeeGroups = Employeegroup::with('shift', 'vehicle', 'zone')
             ->withCount('configgroup')
             ->get();
-        
+
         return response()->json($employeeGroups);
     }
 
@@ -232,7 +232,7 @@ class EmployeegroupController extends Controller
                     'days'=>$days,
                     'status'=>1,
                 ]);
-                
+
                 if($request->driver_id){
                     Configgroup::where('employeegroup_id', $id)->delete();
                     Configgroup::create([
@@ -246,11 +246,11 @@ class EmployeegroupController extends Controller
                                 'employeegroup_id'=>$employeeGroup->id,
                                 'employee_id'=>$ayudante,
                             ]);
-                        }   
+                        }
                     }
                 }
 
-                
+
 
                 return response()->json([
                     'message' => 'Grupo de personal actualizado exitosamente'
@@ -294,7 +294,7 @@ class EmployeegroupController extends Controller
     public function vehiclechange(string $id){
         $vehicletypes = Vehicletype::all();
         $vehicles = Vehicle::all();
-        $employeeGroup = Employeegroup::findOrFail($id);        
+        $employeeGroup = Employeegroup::findOrFail($id);
         return view('admin.employee-groups.vehiclechange', compact('vehicletypes', 'employeeGroup', 'vehicles'));
     }
 

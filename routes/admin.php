@@ -19,6 +19,10 @@ use App\Http\Controllers\admin\ZoneController;
 use App\Http\Controllers\admin\SchedulingController;
 use App\Http\Controllers\admin\ChangeController;
 
+use App\Http\Controllers\admin\MaintenanceController;
+use App\Http\Controllers\admin\MaintenanceScheduleController;
+use App\Http\Controllers\admin\MaintenanceActivityController;
+
 use Illuminate\Support\Facades\Route;
 
 
@@ -74,3 +78,17 @@ Route::resource('/', AdminController::class)->names('admin');
 
 Route::post('changes/store-massive', [ChangeController::class, 'storeMassiveChange'])
     ->name('admin.changes.storeMassive');
+
+
+    // RUTAS DE MANTENIMIENTO
+Route::resource('maintenances', MaintenanceController::class)->names('admin.maintenances');
+
+Route::resource('schedules', MaintenanceScheduleController::class)->names('admin.schedules');
+
+Route::resource('activities', MaintenanceActivityController::class)->names('admin.activities');
+
+
+
+
+Route::post('schedulings/validate-availability', [SchedulingController::class, 'validateAvailability'])
+    ->name('admin.schedulings.validate-availability');

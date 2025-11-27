@@ -12,18 +12,6 @@ class BrandController extends Controller
     /**
      * Display a listing of the resource.
      *  public function index(Request $request)
-    {
-        $query = Brand::query();
-
-        if ($request->filled('search')) {
-            $query->where('name', 'LIKE', '%' . $request->search . '%')
-                  ->orWhere('description', 'LIKE', '%' . $request->search . '%');
-        }
-    
-        $brands = $query->paginate(10)->appends($request->only('search'));
-    
-        return view('admin.brands.index', compact('brands'));
-    }
      */
     public function index(Request $request)
     {
@@ -31,13 +19,13 @@ class BrandController extends Controller
         if($request->ajax()){
             return DataTables::of($brands)
             ->addColumn('logo', function($brand){
-                return "<img src='" . ($brand->logo == '' ? asset('storage/brand_logo/producto_var.webp') : $brand->logo) . "' width='50'>";
+                return "<img src='" . ($brand->logo == '' ? asset('storage/brand_logo/no_image.png') : $brand->logo) . "' width='50'>";
             })
             ->addColumn('action', function($brand){
                $editBtn = '<button class="btn btn-warning btn-sm btnEditar" id="' . $brand->id . '">
                                     <i class="fas fa-edit"></i>
                                 </button>';
-                    
+
                 $deleteBtn = '<form id="delete-form-' . $brand->id . '" class="delete d-inline" action="' . route('admin.brands.destroy', $brand->id) . '" method="POST">
                         ' . csrf_field() . '
                         ' . method_field('DELETE') . '
@@ -45,12 +33,12 @@ class BrandController extends Controller
                             <i class="fas fa-trash"></i>
                         </button>
                     </form>';
-                    
+
                     return $editBtn . ' ' . $deleteBtn;
                 })
             ->rawColumns(['logo','action'])
             ->make(true);
-        }else{  
+        }else{
             return view('admin.brands.index', compact('brands'));
         }
     }
@@ -77,10 +65,10 @@ class BrandController extends Controller
             'name.unique' => 'El nombre de la marca ya existe',
             'name.max' => 'El nombre de la marca puede tener máximo 100 caracteres',
         ]);
-        
+
 
         if($request->logo !=""){
-            $image  = $request->file('logo')->store('public/brand_logo'); 
+            $image  = $request->file('logo')->store('public/brand_logo');
             $logo = Storage::url($image);
         }
 
@@ -126,13 +114,13 @@ class BrandController extends Controller
             $brand = Brand::find($id);
             $request->validate([
                 'name'=>'unique:brands,name,'.$id,
-               
+
             ]);
-            
+
             if($request->logo != null){
                 $image  = $request->file('logo')->store('public/brand_logo');
                 $logo = Storage::url($image);
-                
+
                 if($brand->logo != null){
                     Storage::delete($brand->logo); // borrar la imagen anterior
                 }
@@ -142,15 +130,15 @@ class BrandController extends Controller
                     'description' => $request->description,
                     'logo' => $logo
                 ]);
-                
+
             }else{
                 $brand->update([
                     'name' => $request->name,
                     'description' => $request->description,
                 ]);
             }
-           
-            
+
+
             //$brand->update($request->all());
             return response()->json(['success'=>true,'message' => 'Marca actualizada exitosamente'],200);
         } catch (\Throwable $th) {
@@ -166,7 +154,7 @@ class BrandController extends Controller
     try {
         $brand = Brand::findOrFail($id);
 
- 
+
         if ($brand->brandmodels()->exists()) {
             return response()->json([
                 'success' => false,
@@ -196,5 +184,5 @@ class BrandController extends Controller
     }
 }
 
-         
+
 }

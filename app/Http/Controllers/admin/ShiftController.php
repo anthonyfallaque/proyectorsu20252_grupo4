@@ -76,15 +76,15 @@ class ShiftController extends Controller
             $request->validate([
                 'name' => 'required|string|max:100|unique:shifts,name',
                 'description' => 'nullable|string',
-                'hour_in' => 'required|string',    // ✅ Agregar validación
-                'hour_out' => 'required|string'    // ✅ Agregar validación
+                'hour_in' => 'required|string',
+                'hour_out' => 'required|string'
             ]);
 
             $shift = Shift::create([
                 'name' => $request->name,
                 'description' => $request->description,
-                'hour_in' => $request->hour_in,      // ✅ Agregar
-                'hour_out' => $request->hour_out     // ✅ Agregar
+                'hour_in' => $request->hour_in,
+                'hour_out' => $request->hour_out
             ]);
 
             return response()->json([

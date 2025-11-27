@@ -35,7 +35,7 @@ class EmployeeSeeder extends Seeder
         $E1->license = 'L74561239';
         $E1->address = 'Av. Grau 150, Chiclayo';
         $E1->email = 'carlos.salazar@empresa.com';
-        $E1->photo = 'empleados/carlos.jpg';
+        $E1->photo = 'no_image.png';
         $E1->phone = '987320145';
         $E1->status = true;
         $E1->password = Hash::make('password123');
@@ -50,7 +50,7 @@ class EmployeeSeeder extends Seeder
         $E2->license = 'L71829364';
         $E2->address = 'Jr. Ica 245, Trujillo';
         $E2->email = 'lucia.paredes@empresa.com';
-        $E2->photo = 'empleados/lucia.jpg';
+        $E2->photo = 'no_image.png';
         $E2->phone = '912468357';
         $E2->status = true;
         $E2->password = Hash::make('password123');
@@ -65,7 +65,7 @@ class EmployeeSeeder extends Seeder
         $E3->license = 'L68923471';
         $E3->address = 'Calle Los Álamos 520, Lima';
         $E3->email = 'andres.ramirez@empresa.com';
-        $E3->photo = 'empleados/andres.jpg';
+        $E3->photo = 'no_image.png';
         $E3->phone = '934156782';
         $E3->status = true;
         $E3->password = Hash::make('password123');
@@ -80,7 +80,7 @@ class EmployeeSeeder extends Seeder
         $E4->license = 'L73562819';
         $E4->address = 'Av. Los Héroes 350, Piura';
         $E4->email = 'paola.huaman@empresa.com';
-        $E4->photo = 'empleados/paola.jpg';
+        $E4->photo = 'no_image.png';
         $E4->phone = '965821347';
         $E4->status = true;
         $E4->password = Hash::make('password123');
@@ -95,7 +95,7 @@ class EmployeeSeeder extends Seeder
         $E5->license = 'L75683924';
         $E5->address = 'Calle Junín 120, Cusco';
         $E5->email = 'jose.vega@empresa.com';
-        $E5->photo = 'empleados/jose.jpg';
+        $E5->photo = 'no_image.png';
         $E5->phone = '923567489';
         $E5->status = true;
         $E5->password = Hash::make('password123');
@@ -110,7 +110,7 @@ class EmployeeSeeder extends Seeder
         $E6->license = 'L70294518';
         $E6->address = 'Av. Arequipa 1200, Lima';
         $E6->email = 'monica.caceres@empresa.com';
-        $E6->photo = 'empleados/monica.jpg';
+        $E6->photo = 'no_image.png';
         $E6->phone = '978456312';
         $E6->status = false;
         $E6->password = Hash::make('password123');
@@ -125,7 +125,7 @@ class EmployeeSeeder extends Seeder
         $E7->license = 'L71928345';
         $E7->address = 'Calle Los Cedros 310, Arequipa';
         $E7->email = 'ricardo.nunez@empresa.com';
-        $E7->photo = 'empleados/ricardo.jpg';
+        $E7->photo = 'no_image.png';
         $E7->phone = '912345978';
         $E7->status = true;
         $E7->password = Hash::make('password123');
@@ -140,7 +140,7 @@ class EmployeeSeeder extends Seeder
         $E8->license = 'L74819362';
         $E8->address = 'Jr. Huallaga 900, Lima';
         $E8->email = 'tatiana.lopez@empresa.com';
-        $E8->photo = 'empleados/tatiana.jpg';
+        $E8->photo = 'no_image.png';
         $E8->phone = '989176543';
         $E8->status = true;
         $E8->password = Hash::make('password123');
@@ -155,7 +155,7 @@ class EmployeeSeeder extends Seeder
         $E9->license = 'L71324958';
         $E9->address = 'Av. Primavera 520, Lima';
         $E9->email = 'sergio.perez@empresa.com';
-        $E9->photo = 'empleados/sergio.jpg';
+        $E9->photo = 'no_image.png';
         $E9->phone = '991347852';
         $E9->status = true;
         $E9->password = Hash::make('password123');
@@ -170,7 +170,7 @@ class EmployeeSeeder extends Seeder
         $E10->license = 'L72469583';
         $E10->address = 'Av. Progreso 430, Chiclayo';
         $E10->email = 'camila.zapata@empresa.com';
-        $E10->photo = 'empleados/camila.jpg';
+        $E10->photo = 'no_image.png';
         $E10->phone = '998345712';
         $E10->status = true;
         $E10->password = Hash::make('password123');

@@ -13,6 +13,8 @@ use App\Models\Employee;
 use App\Models\Vehicle;
 use App\Models\Shift;
 
+use App\Models\Zone;
+
 use Yajra\DataTables\Facades\DataTables;
 use App\Models\Scheduling;
 
@@ -116,144 +118,188 @@ class ChangeController extends Controller
      */
     public function create()
     {
-        $employeegroups = Employeegroup::all();
-        $vehicles = Vehicle::all();
+        $zones = Zone::all();
         $shifts = Shift::all();
-        $employees = Employee::whereHas('contracts', function($query) {
-            $query->where('is_active', 1); // Filtra contratos activos
-        })
-        ->get();
-        return view('admin.changes.create',compact('shifts','vehicles','employeegroups','employees'));
+        $vehicles = Vehicle::all();
+
+        // Cargar conductores con información de contrato vigente
+        $employees = Employee::where('type_id', 1)
+                            ->orderBy('lastnames', 'asc')
+                            ->get()
+                            ->map(function($employee) {
+                                $today = now()->format('Y-m-d');
+
+                                // Verificar si tiene contrato vigente
+                                $hasActiveContract = DB::table('contracts')
+                                    ->where('employee_id', $employee->id)
+                                    ->where('start_date', '<=', $today)
+                                    ->where(function($query) use ($today) {
+                                        $query->whereNull('end_date')
+                                            ->orWhere('end_date', '>=', $today);
+                                    })
+                                    ->exists();
+
+                                $employee->contract_status = $hasActiveContract ? 'Contrato Vigente' : 'Sin Contrato Vigente';
+                                return $employee;
+                            });
+
+        return view('admin.changes.create', compact('zones', 'shifts', 'vehicles', 'employees'));
     }
 
     /**
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
-{
+    {
+        // Validar los datos recibidos
+        $validated = $request->validate([
+            'reason_id' => 'required|integer|in:1,2,3',
+            'startDate' => 'required|date',
+            'endDate' => 'required|date|after_or_equal:startDate',
+            'motivo' => 'required|string',
+            'zone_id' => 'nullable|exists:zones,id',
 
+            // Cambio de Personal (reason_id = 1)
+            'old_employee' => 'required_if:reason_id,1|nullable|exists:employees,id',
+            'new_employee' => 'required_if:reason_id,1|nullable|exists:employees,id',
 
-    // Validar los datos recibidos
-    $validated = $request->validate([
-        'reason_id' => 'required|integer|in:1,2,3',
-        'startDate' => 'required|date',
-        'endDate' => 'required|date|after_or_equal:startDate',
-        // Cambio de Personal (reason_id = 1)
-        'old_employee' => 'required_if:reason_id,1|nullable|exists:employees,id',
-        'new_employee' => 'required_if:reason_id,1|nullable|exists:employees,id',
-        // Cambio de Turno (reason_id = 2)
-        'group_turno' => 'required_if:reason_id,2|nullable|exists:employeegroups,id',
-        'new_shift_id' => 'required_if:reason_id,2|nullable|exists:shifts,id',
-        // Cambio de Vehículo (reason_id = 3)
-        'groupvehicle' => 'required_if:reason_id,3|nullable|exists:employeegroups,id',
-        'new_vehicle_id' => 'required_if:reason_id,3|nullable|exists:vehicles,id',
-    ]);
+            // Cambio de Turno (reason_id = 2)
+            'old_shift_id' => 'required_if:reason_id,2|nullable|exists:shifts,id',
+            'new_shift_id' => 'required_if:reason_id,2|nullable|exists:shifts,id',
 
+            // Cambio de Vehículo (reason_id = 3)
+            'old_vehicle_id' => 'required_if:reason_id,3|nullable|exists:vehicles,id',
+            'new_vehicle_id' => 'required_if:reason_id,3|nullable|exists:vehicles,id',
+        ]);
 
-    DB::beginTransaction();
+        DB::beginTransaction();
 
-    try {
-        if($request->reason_id == 1){
-            // IMPORTANTE: Agregar select() para especificar las columnas
-            $schedulings = Scheduling::join('groupdetails as gd', 'schedulings.id', '=', 'gd.scheduling_id')
-                ->where('gd.employee_id', $request->old_employee)
-                ->where('schedulings.date', '>=', $request->startDate)
-                ->where('schedulings.date', '<=',  $request->endDate)
-                ->select('schedulings.*')  // ← ESTO ES CRÍTICO
-                ->get();
+        try {
+            if($request->reason_id == 1){
+                // CAMBIO DE PERSONAL
+                $query = Scheduling::join('groupdetails as gd', 'schedulings.id', '=', 'gd.scheduling_id')
+                    ->where('gd.employee_id', $request->old_employee)
+                    ->where('schedulings.date', '>=', $request->startDate)
+                    ->where('schedulings.date', '<=', $request->endDate);
 
-            if ($schedulings->isEmpty()) {
-                DB::rollBack();
-                return response()->json(['message' => 'No hay registros disponibles.'], 404);
-            }
+                if ($request->filled('zone_id')) {
+                    $query->where('schedulings.zone_id', $request->zone_id);
+                }
 
-            foreach ($schedulings as $scheduling) {
-                // Crear el cambio primero
-                Change::create([
-                    'scheduling_id' => $scheduling->id,
-                    'reason_id' => $request->reason_id,
-                    'new_employee_id' => $request->new_employee,
-                    'old_employee_id' => $request->old_employee,
-                    'change_date' => now(),
-                ]);
+                $schedulings = $query->select('schedulings.*')->get();
 
-                // Actualizar el groupdetail
-                Groupdetail::where('scheduling_id', $scheduling->id)
-                    ->where('employee_id', $request->old_employee)
-                    ->update([
-                        'employee_id' => $request->new_employee,
+                if ($schedulings->isEmpty()) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'No hay registros disponibles.'], 404);
+                }
+
+                foreach ($schedulings as $scheduling) {
+                    Change::create([
+                        'scheduling_id' => $scheduling->id,
+                        'reason_id' => $request->reason_id,
+                        'new_employee_id' => $request->new_employee,
+                        'old_employee_id' => $request->old_employee,
+                        'change_date' => now(),
+                        'notes' => $request->motivo,
                     ]);
+
+                    // Actualizar el empleado en el groupdetail
+                    Groupdetail::where('scheduling_id', $scheduling->id)
+                        ->where('employee_id', $request->old_employee)
+                        ->update([
+                            'employee_id' => $request->new_employee,
+                        ]);
+
+                    // Marcar scheduling como Reprogramado
+                    $scheduling->update([
+                        'status' => 3,
+                    ]);
+                }
+
+                DB::commit();
+                return response()->json(['message' => 'Cambio de personal realizado correctamente.'], 200);
+
+            } else if($request->reason_id == 2){
+                // CAMBIO DE TURNO
+                $query = Scheduling::where('shift_id', $request->old_shift_id)
+                    ->where('date', '>=', $request->startDate)
+                    ->where('date', '<=', $request->endDate);
+
+                if ($request->filled('zone_id')) {
+                    $query->where('zone_id', $request->zone_id);
+                }
+
+                $schedulings = $query->get();
+
+                if ($schedulings->isEmpty()) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'No hay registros con ese turno en las fechas seleccionadas.'], 404);
+                }
+
+                foreach ($schedulings as $scheduling) {
+                    Change::create([
+                        'scheduling_id' => $scheduling->id,
+                        'reason_id' => $request->reason_id,
+                        'new_shift_id' => $request->new_shift_id,
+                        'old_shift_id' => $scheduling->shift_id,
+                        'change_date' => now(),
+                        'notes' => $request->motivo,
+                    ]);
+
+                    $scheduling->update([
+                        'status' => 3,  //Reprogramado (amarillo)
+                        'shift_id' => $request->new_shift_id,
+                    ]);
+                }
+
+                DB::commit();
+                return response()->json(['message' => 'Cambio de turno realizado correctamente.'], 200);
+
+            } else {
+                // CAMBIO DE VEHÍCULO
+                $query = Scheduling::where('vehicle_id', $request->old_vehicle_id)
+                    ->where('date', '>=', $request->startDate)
+                    ->where('date', '<=', $request->endDate);
+
+                if ($request->filled('zone_id')) {
+                    $query->where('zone_id', $request->zone_id);
+                }
+
+                $schedulings = $query->get();
+
+                if ($schedulings->isEmpty()) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'No hay registros con ese vehículo en las fechas seleccionadas.'], 404);
+                }
+
+                foreach ($schedulings as $scheduling) {
+                    Change::create([
+                        'scheduling_id' => $scheduling->id,
+                        'reason_id' => $request->reason_id,
+                        'new_vehicle_id' => $request->new_vehicle_id,
+                        'old_vehicle_id' => $scheduling->vehicle_id,
+                        'change_date' => now(),
+                        'notes' => $request->motivo,
+                    ]);
+
+                    $scheduling->update([
+                        'status' => 3,  // Reprogramado (amarillo)
+                        'vehicle_id' => $request->new_vehicle_id,
+                    ]);
+                }
+
+                DB::commit();
+                return response()->json(['message' => 'Cambio de vehículo realizado correctamente.'], 200);
             }
 
-            DB::commit();
-            return response()->json(['message' => 'Registros actualizados correctamente.'], 200);
-
-        } else if($request->reason_id == 2){
-            $schedulings = Scheduling::where('group_id', $request->group_turno)
-                ->where('date', '>=', $request->startDate)
-                ->where('date', '<=', $request->endDate)
-                ->get();
-
-            if ($schedulings->isEmpty()) {
-                DB::rollBack();
-                return response()->json(['message' => 'No hay registros disponibles.'], 404);
-            }
-
-            foreach ($schedulings as $scheduling) {
-                Change::create([
-                    'scheduling_id' => $scheduling->id,
-                    'reason_id' => $request->reason_id,
-                    'new_shift_id' => $request->new_shift_id,
-                    'old_shift_id' => $scheduling->shift_id,
-                    'change_date' => now(),
-                ]);
-
-                $scheduling->update([
-                    'status' => 2,
-                    'shift_id' => $request->new_shift_id,
-                ]);
-            }
-
-            DB::commit();
-            return response()->json(['message' => 'Registros actualizados correctamente.'], 200);
-
-        } else {
-            $schedulings = Scheduling::where('group_id', $request->groupvehicle)
-                ->where('date', '>=', $request->startDate)
-                ->where('date', '<=', $request->endDate)
-                ->get();
-
-            if ($schedulings->isEmpty()) {
-                DB::rollBack();
-                return response()->json(['message' => 'No hay registros disponibles.'], 404);
-            }
-
-            foreach ($schedulings as $scheduling) {
-                Change::create([
-                    'scheduling_id' => $scheduling->id,
-                    'reason_id' => $request->reason_id,
-                    'new_vehicle_id' => $request->new_vehicle_id,
-                    'old_vehicle_id' => $scheduling->vehicle_id,
-                    'change_date' => now(),
-                ]);
-
-                $scheduling->update([
-                    'vehicle_id' => $request->new_vehicle_id,
-                ]);
-            }
-
-            DB::commit();
-            return response()->json(['message' => 'Registros actualizados correctamente.'], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error en store de Changes: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Error al procesar: ' . $e->getMessage()
+            ], 500);
         }
-
-    } catch (\Exception $e) {
-        DB::rollBack();
-        \Log::error('Error en store de Changes: ' . $e->getMessage());
-        return response()->json([
-            'message' => 'Error al procesar: ' . $e->getMessage()
-        ], 500);
     }
-}
 
     /**
      * Display the specified resource.
@@ -288,34 +334,62 @@ class ChangeController extends Controller
         $day_now = Carbon::now()->format('Y-m-d');
         $scheduling = Scheduling::findOrFail($change->scheduling_id);
 
+        // Validar que no se eliminen cambios de fechas pasadas
         if ($day_now > $scheduling->date) {
             return response()->json([
                 'message' => 'No se puede eliminar un cambio que ya ha ocurrido'
             ], 500);
         }
 
-        if ($change->old_employee_id) {
-            $scheduling->update([
-                'employee_id' => $change->old_employee_id
-            ]);
-        }
+        DB::beginTransaction();
 
-        if ($change->old_vehicle_id) {
-            $scheduling->update([
-                'vehicle_id' => $change->old_vehicle_id
-            ]);
-        }
+        try {
+            // REVERTIR CAMBIO DE CONDUCTOR
+            if ($change->old_employee_id) {
+                // Revertir el cambio en groupdetails
+                Groupdetail::where('scheduling_id', $scheduling->id)
+                    ->where('employee_id', $change->new_employee_id)
+                    ->update([
+                        'employee_id' => $change->old_employee_id,
+                    ]);
 
-        if ($change->old_shift_id) {
-            $scheduling->update([
-                'status'=>1,
-                'shift_id' => $change->old_shift_id
-            ]);
-        }
+                // Volver el status a Pendiente
+                $scheduling->update([
+                    'status' => 1
+                ]);
+            }
 
-        $change->delete();
-        return response()->json([
-            'message' => 'Cambio eliminado correctamente'
-        ], 200);
+            // REVERTIR CAMBIO DE VEHÍCULO
+            if ($change->old_vehicle_id) {
+                $scheduling->update([
+                    'vehicle_id' => $change->old_vehicle_id,
+                    'status' => 1
+                ]);
+            }
+
+            // REVERTIR CAMBIO DE TURNO
+            if ($change->old_shift_id) {
+                $scheduling->update([
+                    'shift_id' => $change->old_shift_id,
+                    'status' => 1
+                ]);
+            }
+
+            // Eliminar el registro del cambio
+            $change->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Cambio eliminado y programación revertida correctamente'
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al eliminar cambio: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Error al eliminar el cambio: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
